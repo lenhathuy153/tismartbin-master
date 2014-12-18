@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <script src='https://cdn.firebase.com/js/client/1.0.15/firebase.js'></script>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style type="text/css">
+    html {
+        height: 100%
+    }
+    body {
+        height: 100%;
+        margin: 0;
+        padding: 0
+    }
+    #map-canvas {
+        height: 100%
+    }
+    </style>
+    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBxqIv2x3CwElxQH_tnL_qNE-yUaKWfgiw">
+    </script>
+    <script type="text/javascript">
+    var bin_red = 'images/bin_red.png';
+    var bin_green = 'images/bin_green.png';
+    var bin_yellow = 'images/bin_yellow.png';
+    var bin_fire = 'images/bin_fire.png';
+    var office_icon = 'images/office.png';
+    var car_icon = 'images/car.png';
+
+    var startPoint = new google.maps.LatLng(10.848428, 106.774246);
+    var directionsDisplay;
+    var directionsService = new google.maps.DirectionsService();
+    var map;
+
+    var listMarker = [];
+    var listPos = [];
+
+    var car;
+    var route;
+    var points;
+
+    var tick = 1000;
+
+    var car_status = 0;
+    var car_pos = 0;
+
+    var myDataRef = new Firebase('https://incandescent-fire-7887.firebaseio.com/');
+
+    function initialize() {
+        directionsDisplay = new google.maps.DirectionsRenderer({
+            suppressMarkers: true,
+            preserveViewport: true
+        });
+        var hue = new google.maps.LatLng(10.848138, 106.786562);
+        var mapOptions = {
+            center: hue,
+            zoom: 12,
+            mapTypeId: google.maps.MapTypeId.ROADMAP
+        };
+        map = new google.maps.Map(document.getElementById("map-canvas"),
+            mapOptions);
+        directionsDisplay.setMap(map);
+        var startMarker = new google.maps.Marker({
+            position: startPoint, startPoint1,
+            map: map,
+            title: '\u0043\u00f4\u006e\u0067 \u0074\u0079 \u0110\u00f4 \u0074\u0068\u1ecb \u002d \u0048\u0075\u1ebf',
+            animation: google.maps.Animation.DROP,
+            icon: office_icon
+        });
+
+        car = new google.maps.Marker({
+            position: startPoint,
+            map: map,
+            animation: google.maps.Animation.DROP,
+            icon: car_icon
+        });
+		car1 = new google.maps.Marker({
+            position: startPoint1,
+            map: map,
+            animation: google.maps.Animation.DROP,
+            icon: car_icon
+        });
+
+        google.maps.event.addListener(car, 'click', function() {
+            if (car_status)
+                stop_car();
+            else
+                start_car();
+        });
+		google.maps.event.addListener(car1, 'click', function() {
+            if (car_status)
+                stop_car();
+            else
+                start_car();
+        });
+    }
+    google.maps.event.addDomListener(window, 'load', initialize);
+    </script>
+    <script>
+    setInterval("move_car()", tick);
+
+    function move_car() {
+        // // if (pos == points.length) {
+        // //     google.maps.event.addListener(car, 'click', function() {
+        // //         start_car();
+        // //     });
+        // //     return;
+        // // }
+
+        // car.setPosition(points[pos].point);
+        // pos = pos + 1;
+        // // console.log('moving' + pos);
+        // setTimeout("move_car(" + pos + ")", tick);
+        if (!car_status)
+            return;
+
+        car.setPosition(points[car_pos].point);
+        car_pos = (car_pos + 1) % points.length;
+
+        console.log('moving_car');
+    }
+
+    function start_car() {
+        // google.maps.event.clearInstanceListeners(car);
+        car_status = 1;
+        // console.log(points);
+        // console.log(route);
+        // setTimeout("move_car(0)", tick);
+    }
+
+    function reset_car() {
+        points = getPointOnRoute(route);
+        car_pos = 0;
+    }
+
+    function stop_car() {
+        car_status = 0;
+    }
+
+    function getIcon(data) {
+        if (data.temp > 70)
+            return bin_fire
+        if (data.trash < 30)
+            return bin_green
+        if (data.trash < 70)
+            return bin_yellow
+        else
+            return bin_red
+    }
+
+    function calcRoute() {
+        var waypts = [];
+        var waypts_trash = [];
+        var waypts_fire = [];
+        for (var point in listPos) {
+            if (listPos.hasOwnProperty(point)) {
+                var data = listPos[point];
+                if (data.trash >= 70) {
+                    waypts_trash.push({
+                        location: new google.maps.LatLng(data.lat, data.long),
+                        stopover: true
+                    });
+                }
+                if (data.temp >= 70) {
+                     waypts_fire.push({
+                        location: new google.maps.LatLng(data.lat, data.long),
+                        stopover: true
+                    });
+                }
+            }
+        }
+
+        waypts = waypts_trash
+        if (waypts_fire.length > 0) 
+            waypts = waypts_fire
+        // if (waypts.length <= 0) {
+        //     directionsDisplay.setMap(null);
+        //     return;
+        // }
+
+        directionsDisplay.setMap(map);
+
+        var request = {
+            origin: car.getPosition(),
+            destination: startPoint,
+            waypoints: waypts,
+            optimizeWaypoints: true,
+            travelMode: google.maps.TravelMode.DRIVING
+        };
+
+        directionsService.route(request, function(response, status) {
+            if (status == google.maps.DirectionsStatus.OK) {
+                directionsDisplay.setDirections(response);
+                route = response;
+
+                var current_car_status = car_status;
+                stop_car();
+                reset_car();
+                car_status = current_car_status;
+            }
+        });
+    }
+
+    function createMarker(data) {
+
+        var newPoint = new google.maps.LatLng(data.lat, data.long);
+
+        var icon_image = getIcon(data)
+
+        var marker = new google.maps.Marker({
+            position: newPoint,
+            map: map,
+            title: data.name,
+            animation: google.maps.Animation.DROP,
+            icon: icon_image
+        });
+
+        var infowindow = new google.maps.InfoWindow({
+            content: '<div id=\'content\'>' + data.trash + '</div>'
+        });
+        google.maps.event.addListener(marker, 'click', function() {
+            infowindow.open(map, marker);
+        });
+
+        return marker;
+    }
+
+    function getPointOnRoute(route_data) {
+        var points = [];
+        var legs = route_data.routes[0].legs;
+        for (i = 0; i < legs.length; i++) {
+            var steps = legs[i].steps;
+            for (j = 0; j < steps.length; j++) {
+                var nextSegment = steps[j].path;
+                for (k = 0; k < nextSegment.length; k++) {
+                    var data = {
+                        point: null,
+                        isEndPoint: null
+                    };
+                    data.point = nextSegment[k];
+                    data.isEndPoint = false;
+                    if (k == nextSegment.length - 1)
+                        data.isEndPoint = true;
+                    points.push(data);
+                }
+            }
+        }
+        return points;
+    }
+
+    myDataRef.on('child_added', function(snapshot) {
+        // alert('adding');
+        var data = snapshot.val();
+        listPos[data.name] = data;
+        listMarker[data.name] = createMarker(data);
+
+        calcRoute();
+    });
+
+    myDataRef.on('child_changed', function(snapshot) {
+        var data = snapshot.val();
+        // alert(data.trash);
+        var pos = listPos[data.name];
+        var marker = listMarker[data.name];
+
+        if (pos)
+            listPos[data.name] = data;
+
+        if (marker) {
+            marker.setMap(null)
+            marker = null;
+            listMarker[data.name] = createMarker(data);
+        }
+
+        calcRoute();
+    });
+    </script>
+</head>
+
+<body>
+	
+    <div id="map-canvas" />
+	
+</body>
+
+</html>
